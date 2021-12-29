@@ -1,4 +1,0 @@
-Load for five secs: 27%/2%; one minute: 27%; five minutes: 27%
-Time source is NTP, 00:21:39.493 ALA Thu Jul 1 2021
-
-Protocol  Address          Age (min)  Hardware Addr   Type   Interface
