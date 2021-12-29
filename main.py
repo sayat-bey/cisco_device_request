@@ -183,7 +183,7 @@ def export_device_info(dev, export_file):
 
 
 def log_parse(dev):
-    version_pattern = re.compile(r"[Cc]isco (.*) \(\S+\) processor.*of memory")
+    version_pattern = re.compile(r"[Cc]isco (\S+) \(.*of memory")
     # cisco ASR-903 (RSP1) processor (revision RSP1) with 504200K/6147K bytes of memory.
     chassis_sn_pattern = re.compile(r"[Pp]rocessor board ID (\w+)")
     # Processor board ID FOX1235H1LT
@@ -241,40 +241,37 @@ def connect_device(my_username, my_password, dev_queue, settings):
         while True:
             try:
                 # print(f"{device.hostname:23}{device.ip_address:16}")
-                dev.ssh_conn = ConnectHandler(device_type=dev.os_type, ip=dev.ip_address,
-                                              username=my_username, password=my_password)
+                dev.ssh_conn = ConnectHandler(device_type=dev.os_type, ip=dev.ip_address, username=my_username, password=my_password)
                 dev.show_commands()
                 log_parse(dev)
                 pid_parse(dev)
                 dev.ssh_conn.disconnect()
                 dev_queue.task_done()
                 break
-
-            except NetMikoTimeoutException as err_msg:
-                dev.connection_status = False
-                dev.connection_error_msg = str(err_msg)
-                print(f"{dev.hostname:23}{dev.ip_address:16}timeout")
-                dev_queue.task_done()
-                break
-                 
-            except SSHException:
-                i += 1
-                dev.reset()
-                print(f"{dev.hostname:23}{dev.ip_address:16}SSHException occurred \t i={i}")
-                time.sleep(5)
-
-            except Exception as err_msg:
-                if i == 2:  # tries
-                    dev.connection_status = False
-                    dev.connection_error_msg = str(err_msg)
-                    print(f"{dev.hostname:23}{dev.ip_address:16}{'BREAK connection failed':20} i={i}")
+            
+            except:
+                try:
+                    dev.ssh_conn = ConnectHandler(device_type="cisco_ios_telnet", ip=dev.ip_address, username=my_username, password=my_password)
+                    dev.show_commands()
+                    log_parse(dev)
+                    pid_parse(dev)
+                    dev.ssh_conn.disconnect()
                     dev_queue.task_done()
+                    print(f"{dev.hostname:23}{dev.ip_address:16}access via telnet")
                     break
-                else:
-                    i += 1
-                    dev.reset()
-                    print(f"{dev.hostname:23}{dev.ip_address:16}ERROR connection failed \t i={i}")
-                    time.sleep(5)
+                
+                except Exception as err_msg:
+                    if i == 1:  # tries
+                        dev.connection_status = False
+                        dev.connection_error_msg = str(err_msg)
+                        print(f"{dev.hostname:23}{dev.ip_address:16}{'BREAK connection failed':20} i={i}")
+                        dev_queue.task_done()
+                        break
+                    else:
+                        i += 1
+                        dev.reset()
+                        print(f"{dev.hostname:23}{dev.ip_address:16}ERROR connection failed \t i={i}")
+                        time.sleep(5)
 
 
 #######################################################################################
