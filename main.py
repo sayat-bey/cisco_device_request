@@ -50,18 +50,6 @@ class CiscoIOS:
         self.pid = []
 
 
-class CiscoXR(CiscoIOS):
-
-    def __init__(self, ip, host):
-        CiscoIOS.__init__(self, ip, host)
-        self.os_type = "cisco_xr"
-
-    def show_commands(self):
-        self.show_version = self.ssh_conn.send_command(r"show version brief")
-        self.show_inventory = self.ssh_conn.send_command(r"show inventory")
-
-
-
 #######################################################################################
 # ------------------------------ def function part -----------------------------------#
 #######################################################################################
@@ -75,8 +63,6 @@ def get_arguments(arguments):
             match = re.search(mt_pattern, arg)
             if match and int(match[1]) <= 100:
                 settings["maxth"] = int(match[1])
-        elif arg == "xr" or arg == "XR":
-            settings["os_type"] = "cisco_xr"
   
     print("\n"
           f"max threads:...................{settings['maxth']}\n"
@@ -86,8 +72,8 @@ def get_arguments(arguments):
 
 
 def get_user_pw():
-    user = input("Enter login: ")
-    psw = getpass()
+    user = "sibraim" #input("Enter login: ")
+    psw = "Lf!xXtsE8:nCC" # getpass()
     print()
     return user, psw
 
@@ -99,10 +85,6 @@ def get_device_info(yaml_file, settings):
         if settings["os_type"] == "cisco_ios":
             for hostname, ip_address in devices_info.items():
                 dev = CiscoIOS(ip=ip_address, host=hostname)
-                devs.append(dev)
-        elif settings["os_type"] == "cisco_xr":
-            for hostname, ip_address in devices_info.items():
-                dev = CiscoXR(ip=ip_address, host=hostname)
                 devs.append(dev)
 
     return devs
@@ -188,29 +170,63 @@ def log_parse(dev):
     chassis_sn_pattern = re.compile(r"[Pp]rocessor board ID (\w+)")
     # Processor board ID FOX1235H1LT
     
-    for line in dev.show_version.splitlines():
-        match_version = re.search(version_pattern, line)
-        match_chassis_sn = re.search(chassis_sn_pattern, line)
+    if "IOS XR" in dev.show_version:
+        if "ASR9K" in dev.show_version:
+            chassis = dev.ssh_conn.send_command("admin show inventory chassis")
+            pattern = re.compile(r"PID: (\S+)\s+.*SN: (\S+)")
+            for line in chassis.splitlines():
+                match = re.search(pattern, line)
+                if match:
+                    dev.chassis["model"] = match[1]
+                    dev.chassis["sn"] = match[2]
 
-        if match_version:
-            cisco_model = match_version[1]          # ASR-903
-            dev.chassis["model"] = cisco_model
+        else:
+            log1 = dev.ssh_conn.send_command("admin", expect_string="#")
+            chassis = dev.ssh_conn.send_command("show inventory chassis")
+            pattern = re.compile(r"PID: \S+\s+.*SN: (\S+)")
 
-        elif match_chassis_sn:
-            chassis_sn = match_chassis_sn[1]        # FOX1235H1LT
-            dev.chassis["sn"] = chassis_sn
+            for line in dev.show_version.splitlines():
+                match = re.search(version_pattern, line)
+                if match:
+                    dev.chassis["model"] = match[1]
+
+            for line in chassis.splitlines():
+                match = re.search(pattern, line)
+                if match:
+                    dev.chassis["sn"] = match[1]
+
+            log2 = dev.ssh_conn.send_command("exit", expect_string="#")
+            
+    else:
+        for line in dev.show_version.splitlines():
+            match_version = re.search(version_pattern, line)
+            match_chassis_sn = re.search(chassis_sn_pattern, line)
+
+            if match_version:
+                cisco_model = match_version[1]          # ASR-903
+                dev.chassis["model"] = cisco_model
+
+            elif match_chassis_sn:
+                chassis_sn = match_chassis_sn[1]        # FOX1235H1LT
+                dev.chassis["sn"] = chassis_sn
 
 
 def pid_parse(dev):
     descr_pattern = re.compile(r'NAME.*DESCR: "(.*)"')
     # NAME: "GigabitEthernet 0/5", DESCR: "1000BASE-LX SFP"
-    pid_sn_pattern = re.compile(r"PID: (\S+)\s+.*SN: (\S+)")
+    pid_sn_pattern = re.compile(r"PID: (\S+)\s*,\s*VID.*SN: (\S+)")
     # PID: GLC-LH-SM         , VID: A  , SN: FNS17041MJY
 
     result = {
         "pid": "-",
         "descr": "-",
         "sn": "-"}
+
+
+    if "IOS XR" in dev.show_version:
+        log1 = dev.ssh_conn.send_command("admin", expect_string="#")
+        dev.show_inventory = dev.ssh_conn.send_command("show inventory")       
+        log2 = dev.ssh_conn.send_command("exit", expect_string="#")
 
     for line in dev.show_inventory.splitlines():
         match_descr = re.search(descr_pattern, line)
@@ -270,7 +286,7 @@ def connect_device(my_username, my_password, dev_queue, settings):
                     else:
                         i += 1
                         dev.reset()
-                        print(f"{dev.hostname:23}{dev.ip_address:16}ERROR connection failed \t i={i}")
+                        # print(f"{dev.hostname:23}{dev.ip_address:16}ERROR connection failed \t i={i}")
                         time.sleep(5)
 
 
