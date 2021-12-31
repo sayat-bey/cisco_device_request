@@ -4,3 +4,4 @@ logs/**
 devices.yaml
 *.csv
 *.xlsx
+psw.yaml

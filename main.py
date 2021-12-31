@@ -72,10 +72,10 @@ def get_arguments(arguments):
 
 
 def get_user_pw():
-    user = input("Enter login: ")
-    psw = getpass()
-    print()
-    return user, psw
+    with open("psw.yaml") as file:
+        user_psw = yaml.load(file, yaml.SafeLoader)
+
+    return user_psw[0], user_psw[1]
 
 
 def get_device_info(yaml_file, settings):
@@ -165,7 +165,7 @@ def export_device_info(dev, export_file):
 
 
 def log_parse(dev):
-    version_pattern = re.compile(r"[Cc]isco (\S+) \(.*of memory")
+    version_pattern = re.compile(r"[Cc]isco (\S+) \(.* memory")
     # cisco ASR-903 (RSP1) processor (revision RSP1) with 504200K/6147K bytes of memory.
     chassis_sn_pattern = re.compile(r"[Pp]rocessor board ID (\w+)")
     # Processor board ID FOX1235H1LT
@@ -214,7 +214,7 @@ def log_parse(dev):
 def pid_parse(dev):
     descr_pattern = re.compile(r'NAME.*DESCR: "(.*)"')
     # NAME: "GigabitEthernet 0/5", DESCR: "1000BASE-LX SFP"
-    pid_sn_pattern = re.compile(r"PID: (\S+)\s*,\s*VID.*SN: (\S+)")
+    pid_sn_pattern = re.compile(r"PID:\s*(\S*)\s*,\s*VID.*SN:\s*(\S+)")
     # PID: GLC-LH-SM         , VID: A  , SN: FNS17041MJY
 
     result = {
@@ -245,6 +245,18 @@ def pid_parse(dev):
                 "descr": "-",
                 "sn": "-"}
 
+def check_pid_match(dev):
+
+    count = dev.show_inventory.count("PID")
+    pid_len = len(dev.pid)
+
+    if count != pid_len:
+        print(f"{dev.hostname:23}{dev.ip_address:16}ERROR: PID and PID_SN do not match")
+
+    else:
+        print(f"{dev.hostname:23}{dev.ip_address:16}OK: PID and PID_SN match")
+
+
 
 #######################################################################################
 # ------------------------------              ----------------------------------------#
@@ -261,6 +273,7 @@ def connect_device(my_username, my_password, dev_queue, settings):
                 dev.show_commands()
                 log_parse(dev)
                 pid_parse(dev)
+                check_pid_match(dev)
                 dev.ssh_conn.disconnect()
                 dev_queue.task_done()
                 break
@@ -271,13 +284,14 @@ def connect_device(my_username, my_password, dev_queue, settings):
                     dev.show_commands()
                     log_parse(dev)
                     pid_parse(dev)
+                    check_pid_match(dev)
                     dev.ssh_conn.disconnect()
                     dev_queue.task_done()
                     print(f"{dev.hostname:23}{dev.ip_address:16}access via telnet")
                     break
                 
                 except Exception as err_msg:
-                    if i == 1:  # tries
+                    if i == 2:  # tries
                         dev.connection_status = False
                         dev.connection_error_msg = str(err_msg)
                         print(f"{dev.hostname:23}{dev.ip_address:16}{'BREAK connection failed':20} i={i}")
