@@ -72,8 +72,8 @@ def get_arguments(arguments):
 
 
 def get_user_pw():
-    user = "sibraim" #input("Enter login: ")
-    psw = "Lf!xXtsE8:nCC" # getpass()
+    user = input("Enter login: ")
+    psw = getpass()
     print()
     return user, psw
 
