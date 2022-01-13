@@ -33,6 +33,7 @@ class CiscoIOS:
 
         self.show_version = None
         self.show_inventory = None
+        self.pid_count = "ERROR"
 
         self.chassis = {"model": "-", "sn": "-"}
         self.pid = []   # [{}{}{}]
@@ -98,16 +99,19 @@ def write_logs(devices, current_time, log_folder, settings):
     device_info = log_folder / f"{current_time}_device_info.txt"
     cisco_model = log_folder / f"{current_time}_model.csv"
     inventory = log_folder / f"{current_time}_inventory.csv"
+    pid_count_info = log_folder / f"{current_time}_pid_count_info.txt"
 
     conn_msg_file = open(conn_msg, "w")
     device_info_file = open(device_info, "w")
     model_file = open(cisco_model, "w")
     inventory_file = open(inventory, "w")
+    pid_count_info_file = open(pid_count_info, "w")
 
     for device in devices:
         if device.connection_status:
             export_device_info(device, device_info_file)  # export device info: show, status, etc
             model_file.write(f"{device.hostname},{device.ip_address},{device.chassis['model']},{device.chassis['sn']}\n")
+            pid_count_info_file.write(f"{device.hostname},{device.ip_address},{device.pid_count}\n")
             for p in device.pid:
                 inventory_file.write(f"{device.hostname},{device.ip_address},{p['pid']},{p['sn']},{p['descr']}\n")
         else:
@@ -121,6 +125,7 @@ def write_logs(devices, current_time, log_folder, settings):
     device_info_file.close()
     model_file.close()
     inventory_file.close()
+    pid_count_info_file.close()
 
     if unavailable_device:
         print("\n" + "-" * 103 + "\n")
@@ -214,7 +219,7 @@ def log_parse(dev):
 def pid_parse(dev):
     descr_pattern = re.compile(r'NAME.*DESCR: "(.*)"')
     # NAME: "GigabitEthernet 0/5", DESCR: "1000BASE-LX SFP"
-    pid_sn_pattern = re.compile(r"PID:\s*(\S*)\s*,\s*VID.*SN:\s*(\S+)")
+    pid_sn_pattern = re.compile(r"PID:\s*(\S*)\s*,\s*VID.*SN:\s*(\S*)")
     # PID: GLC-LH-SM         , VID: A  , SN: FNS17041MJY
 
     result = {
@@ -233,7 +238,9 @@ def pid_parse(dev):
         match_pid_sn = re.search(pid_sn_pattern, line)
 
         if match_descr:
-            result["descr"] = match_descr[1]
+            description = match_descr[1]
+            description_new = description.replace(",", ".")
+            result["descr"] = description_new
 
         elif match_pid_sn:
             result["pid"] = match_pid_sn[1]
@@ -245,6 +252,7 @@ def pid_parse(dev):
                 "descr": "-",
                 "sn": "-"}
 
+
 def check_pid_match(dev):
 
     count = dev.show_inventory.count("PID")
@@ -252,10 +260,8 @@ def check_pid_match(dev):
 
     if count != pid_len:
         print(f"{dev.hostname:23}{dev.ip_address:16}ERROR: PID and PID_SN do not match")
-
     else:
-        print(f"{dev.hostname:23}{dev.ip_address:16}OK: PID and PID_SN match")
-
+        dev.pid_count = "OK"
 
 
 #######################################################################################
@@ -268,8 +274,12 @@ def connect_device(my_username, my_password, dev_queue, settings):
         i = 0
         while True:
             try:
-                # print(f"{device.hostname:23}{device.ip_address:16}")
-                dev.ssh_conn = ConnectHandler(device_type=dev.os_type, ip=dev.ip_address, username=my_username, password=my_password)
+                try:
+                    dev.ssh_conn = ConnectHandler(device_type=dev.os_type, ip=dev.ip_address, username=my_username, password=my_password)
+                except:
+                    dev.ssh_conn = ConnectHandler(device_type="cisco_ios_telnet", ip=dev.ip_address, username=my_username, password=my_password)
+                    print(f"{dev.hostname:23}{dev.ip_address:16}access via telnet")
+
                 dev.show_commands()
                 log_parse(dev)
                 pid_parse(dev)
@@ -277,31 +287,18 @@ def connect_device(my_username, my_password, dev_queue, settings):
                 dev.ssh_conn.disconnect()
                 dev_queue.task_done()
                 break
-            
-            except:
-                try:
-                    dev.ssh_conn = ConnectHandler(device_type="cisco_ios_telnet", ip=dev.ip_address, username=my_username, password=my_password)
-                    dev.show_commands()
-                    log_parse(dev)
-                    pid_parse(dev)
-                    check_pid_match(dev)
-                    dev.ssh_conn.disconnect()
-                    dev_queue.task_done()
-                    print(f"{dev.hostname:23}{dev.ip_address:16}access via telnet")
-                    break
                 
-                except Exception as err_msg:
-                    if i == 2:  # tries
-                        dev.connection_status = False
-                        dev.connection_error_msg = str(err_msg)
-                        print(f"{dev.hostname:23}{dev.ip_address:16}{'BREAK connection failed':20} i={i}")
-                        dev_queue.task_done()
-                        break
-                    else:
-                        i += 1
-                        dev.reset()
-                        # print(f"{dev.hostname:23}{dev.ip_address:16}ERROR connection failed \t i={i}")
-                        time.sleep(5)
+            except Exception as err_msg:
+                if i == 2:  # tries
+                    dev.connection_status = False
+                    dev.connection_error_msg = str(err_msg)
+                    print(f"{dev.hostname:23}{dev.ip_address:16}{'BREAK connection failed':20} i={i}")
+                    dev_queue.task_done()
+                    break
+                else:
+                    i += 1
+                    dev.reset()
+                    time.sleep(5)
 
 
 #######################################################################################
