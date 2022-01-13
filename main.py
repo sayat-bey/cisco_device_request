@@ -217,9 +217,9 @@ def log_parse(dev):
 
 
 def pid_parse(dev):
-    descr_pattern = re.compile(r'NAME.*DESCR: "(.*)"')
+    descr_pattern = re.compile(r'NAME.*DESCR:\s*"(.*)"')
     # NAME: "GigabitEthernet 0/5", DESCR: "1000BASE-LX SFP"
-    pid_sn_pattern = re.compile(r"PID:\s*(\S*)\s*,\s*VID.*SN:\s*(\S*)")
+    pid_sn_pattern = re.compile(r"PID:(.*),\s*VID.*,\s*SN:(.*)")
     # PID: GLC-LH-SM         , VID: A  , SN: FNS17041MJY
 
     result = {
@@ -238,13 +238,13 @@ def pid_parse(dev):
         match_pid_sn = re.search(pid_sn_pattern, line)
 
         if match_descr:
-            description = match_descr[1]
+            description = match_descr[1].strip()
             description_new = description.replace(",", ".")
             result["descr"] = description_new
 
         elif match_pid_sn:
-            result["pid"] = match_pid_sn[1]
-            result["sn"] = match_pid_sn[2]
+            result["pid"] = match_pid_sn[1].strip()
+            result["sn"] = match_pid_sn[2].strip()
 
             dev.pid.append(result)
             result = {
