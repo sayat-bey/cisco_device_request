@@ -40,7 +40,7 @@ class CiscoIOS:
 
     def show_commands(self):
         self.show_version = self.ssh_conn.send_command(r"show version")
-        self.show_inventory = self.ssh_conn.send_command(r"show inventory")
+        self.show_inventory = self.ssh_conn.send_command(r"admin show inventory")
 
     def reset(self):
         self.connection_status = True
@@ -64,6 +64,8 @@ def get_arguments(arguments):
             match = re.search(mt_pattern, arg)
             if match and int(match[1]) <= 100:
                 settings["maxth"] = int(match[1])
+        elif arg in ("xr"):
+            settings["os_type"] = "cisco_xr"
   
     print("\n"
           f"max threads:...................{settings['maxth']}\n"
@@ -79,14 +81,13 @@ def get_user_pw():
     return user_psw[0], user_psw[1]
 
 
-def get_device_info(yaml_file, settings):
+def get_device_info(yaml_file):
     devs = []
     with open(yaml_file, "r") as file:
         devices_info = yaml.load(file, yaml.SafeLoader)
-        if settings["os_type"] == "cisco_ios":
-            for hostname, ip_address in devices_info.items():
-                dev = CiscoIOS(ip=ip_address, host=hostname)
-                devs.append(dev)
+        for hostname, ip_address in devices_info.items():
+            dev = CiscoIOS(ip=ip_address, host=hostname)
+            devs.append(dev)
 
     return devs
 
@@ -275,7 +276,7 @@ def connect_device(my_username, my_password, dev_queue, settings):
         while True:
             try:
                 try:
-                    dev.ssh_conn = ConnectHandler(device_type=dev.os_type, ip=dev.ip_address, username=my_username, password=my_password)
+                    dev.ssh_conn = ConnectHandler(device_type=settings['os_type'], ip=dev.ip_address, username=my_username, password=my_password)
                 except:
                     dev.ssh_conn = ConnectHandler(device_type="cisco_ios_telnet", ip=dev.ip_address, username=my_username, password=my_password)
                     print(f"{dev.hostname:23}{dev.ip_address:16}access via telnet")
@@ -353,7 +354,7 @@ q = queue.Queue()
 
 settings = get_arguments(argv)
 username, password = get_user_pw()
-devices = get_device_info("devices.yaml", settings)
+devices = get_device_info("devices.yaml")
 
 total_devices = len(devices)
 
