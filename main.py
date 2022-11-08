@@ -40,7 +40,7 @@ class CiscoIOS:
 
     def show_commands(self):
         self.show_version = self.ssh_conn.send_command(r"show version")
-        self.show_inventory = self.ssh_conn.send_command(r"admin show inventory")
+        self.show_inventory = self.ssh_conn.send_command(r"show inventory")
 
     def reset(self):
         self.connection_status = True
@@ -49,6 +49,22 @@ class CiscoIOS:
         self.show_inventory = None
         self.chassis = {"model": "-", "sn": "-"}
         self.pid = []
+
+
+class CiscoXR(CiscoIOS):
+    def __init__(self, ip, host):
+        CiscoIOS.__init__(self, ip, host)
+        self.os_type = "cisco_xr"
+
+    def show_commands(self):
+        self.show_version = self.ssh_conn.send_command(r"show version brief")
+        self.show_inventory = self.ssh_conn.send_command(r"admin show inventory")
+
+
+class CiscoXE(CiscoIOS):
+    def __init__(self, ip, host):
+        CiscoIOS.__init__(self, ip, host)
+        self.os_type = "cisco_xe"
 
 
 #######################################################################################
@@ -64,12 +80,11 @@ def get_arguments(arguments):
             match = re.search(mt_pattern, arg)
             if match and int(match[1]) <= 100:
                 settings["maxth"] = int(match[1])
-        elif arg in ("xr"):
-            settings["os_type"] = "cisco_xr"
+        elif arg in ("xr", "xe", "hua", "mx"):
+            settings["os_type"] = arg
   
     print("\n"
           f"max threads:...................{settings['maxth']}\n"
-          f"OS:............................{settings['os_type']}\n"
           )
     return settings
 
@@ -81,13 +96,24 @@ def get_user_pw():
     return user_psw[0], user_psw[1]
 
 
-def get_device_info(yaml_file):
+def get_device_info(csv_file):
     devs = []
-    with open(yaml_file, "r") as file:
-        devices_info = yaml.load(file, yaml.SafeLoader)
-        for hostname, ip_address in devices_info.items():
-            dev = CiscoIOS(ip=ip_address, host=hostname)
-            devs.append(dev)
+    with open(csv_file, "r") as file:
+        for line in file:
+            if "#" not in line and len(line) > 5:
+                hostname, ip_address, ios = line.strip().split(",")
+
+                if ios in ["ios", "cisco_ios"]:
+                    dev = CiscoIOS(ip=ip_address, host=hostname)
+                    devs.append(dev)
+                elif ios in ["ios xr", "cisco_xr", "xr"]:
+                    dev = CiscoXR(ip=ip_address, host=hostname)
+                    devs.append(dev)
+                elif ios in ["ios xe", "cisco_xe", "xe"]:
+                    dev = CiscoXE(ip=ip_address, host=hostname)
+                    devs.append(dev)
+                else:
+                    print(f"wrong ios: {ios}")
 
     return devs
 
@@ -120,7 +146,7 @@ def write_logs(devices, current_time, log_folder, settings):
             conn_msg_file.write("-" * 80 + "\n")
             conn_msg_file.write(f"### {device.hostname} : {device.ip_address} ###\n\n")
             conn_msg_file.write(f"{device.connection_error_msg}\n")
-            unavailable_device.append(f"{device.hostname} : {device.ip_address}")
+            unavailable_device.append(f"{device.hostname},{device.ip_address},{device.os_type}")
             
     conn_msg_file.close()
     device_info_file.close()
@@ -354,7 +380,7 @@ q = queue.Queue()
 
 settings = get_arguments(argv)
 username, password = get_user_pw()
-devices = get_device_info("devices.yaml")
+devices = get_device_info("devices.csv")
 
 total_devices = len(devices)
 
